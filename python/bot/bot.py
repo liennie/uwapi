@@ -80,14 +80,12 @@ class Bot:
     def attack_nearest_enemies(self):
         own_units = [
             x
-            for x in uw_world.entities().values()
-            if x.own()
-            and x.Unit is not None
-            and x.proto().data.get("dps", 0) > 0
-            and x != self.main_entity
+            for x in self.own_entities
+            if x.proto().data.get("dps", 0) > 0 and x != self.main_entity
         ]
         if not own_units:
             return
+
         enemy_units = [
             x for x in uw_world.entities().values() if x.enemy() and x.Unit is not None
         ]
@@ -100,15 +98,6 @@ class Bot:
                     key=lambda x: uw_map.distance_estimate(own.pos(), x.pos()),
                 )
                 uw_commands.order(own.id, uw_commands.fight_to_entity(enemy.id))
-
-    def assign_random_recipes(self):
-        for own in uw_world.entities().values():
-            if not own.own() or own.Unit is None or own.Recipe is not None:
-                continue
-            recipes = own.proto().data.get("recipes", [])
-            if recipes:
-                recipe = random.choice(recipes)
-                uw_commands.set_recipe(own.id, recipe)
 
     def configure(self):
         # auto start the game if available
