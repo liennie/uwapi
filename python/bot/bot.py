@@ -59,10 +59,10 @@ class Bot:
             return
         self.is_configured = True
         uw_game.log_info("configuration start")
-        uw_game.set_player_name("bot-py")
+        uw_game.set_player_name("Neviem")
         uw_game.player_join_force(0)  # create new force
-        uw_game.set_force_color(1, 0, 0)
-        # uw_game.set_force_race(RACE_ID) # todo
+        uw_game.set_force_color(1, 0.6, 1)
+        uw_game.set_force_race(1)  # biomass
         if uw_world.is_admin():
             # uw_admin.set_map_selection("planets/tetrahedron.uwmap")
             uw_admin.set_map_selection("special/risk.uwmap")
@@ -75,7 +75,9 @@ class Bot:
         if not stepping:
             return
         self.work_step += 1
-        match self.work_step % 10:  # save some cpu cycles by splitting work over multiple steps
+        match (
+            self.work_step % 10
+        ):  # save some cpu cycles by splitting work over multiple steps
             case 1:
                 self.attack_nearest_enemies()
             case 5:

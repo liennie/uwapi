@@ -1,0 +1,4 @@
+cffi
+pyright
+mypy
+types-cffi
