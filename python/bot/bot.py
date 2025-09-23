@@ -62,7 +62,7 @@ class Bot:
         uw_game.set_player_name("Neviem")
         uw_game.player_join_force(0)  # create new force
         uw_game.set_force_color(1, 0.6, 1)
-        uw_game.set_force_race(1)  # biomass
+        uw_game.set_force_race(4152033917)  # biomass
         if uw_world.is_admin():
             # uw_admin.set_map_selection("planets/tetrahedron.uwmap")
             uw_admin.set_map_selection("special/risk.uwmap")
