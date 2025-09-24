@@ -16,7 +16,7 @@ class Bot:
     work_step: int = 0  # save some cpu cycles by splitting work over multiple steps
     own_entities: list[Entity] | None = None
     main_entity: Entity | None = None
-    start_pos: int = -1
+    start_pos: int = INVALID
     deposits: dict[str, list[Entity]] | None = {}
     groups: list[list[Entity]] = []
     grouped_entities: set[int] = set()
@@ -329,10 +329,8 @@ class Bot:
                 and entity.proto().name == "overlord"
             ):
                 self.main_entity = entity
-                if self.start_pos < 0:
+                if self.start_pos == INVALID:
                     self.start_pos = entity.pos()
-                    if self.start_pos == INVALID:
-                        self.start_pos = -1
                 return
 
         self.main_entity = None
