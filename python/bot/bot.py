@@ -54,7 +54,7 @@ class Bot:
                 prototypes.Construction["incubator"],
                 prev_pos=1,
                 build_after=[1],
-                recipe=lambda: prototypes.Recipe["wardkin"],
+                recipe=lambda: self.incubator_recipe(),
             ),
             Build(
                 prototypes.Construction["nutritree"],
@@ -77,7 +77,7 @@ class Bot:
                 prototypes.Construction["incubator"],
                 prev_pos=5,
                 build_after=[1],
-                recipe=lambda: prototypes.Recipe["wardkin"],
+                recipe=lambda: self.incubator_recipe(),
             ),
             Build(
                 prototypes.Construction["nutritree"],
@@ -100,6 +100,54 @@ class Bot:
         self.req_funcs = {
             Requirement.DEPOSITS: self.get_deposits,
         }
+
+    def configure(self):
+        # auto start the game if available
+        if (
+            self.is_configured
+            and uw_game.game_state() == GameState.Session
+            and uw_world.is_admin()
+        ):
+            time.sleep(3)  # give the observer enough time to connect
+            uw_admin.start_game()
+            return
+        # is configuring possible?
+        if (
+            self.is_configured
+            or uw_game.game_state() != GameState.Session
+            or uw_world.my_player_id() == 0
+        ):
+            return
+        self.is_configured = True
+        uw_game.log_info("configuration start")
+        uw_game.set_player_name("Neviem")
+        uw_game.player_join_force(0)  # create new force
+        uw_game.set_force_color(1, 0.6, 1)
+        uw_game.set_force_race(4152033917)  # biomass
+        if uw_world.is_admin():
+            # uw_admin.set_map_selection("planets/tetrahedron.uwmap")
+            uw_admin.set_map_selection("special/risk.uwmap")
+            uw_admin.add_ai()
+            uw_admin.set_automatic_suggested_camera_focus(True)
+        uw_game.log_info("configuration done")
+
+    def run(self):
+        uw_game.log_info("bot-py start")
+
+        # Unnatural Worlds/bin/profiling.htm?port={port} # log: profiling server listens on port {}
+        # uw_game.performance_profiling(True)
+
+        if not uw_game.try_reconnect():
+            uw_game.set_connect_start_gui(True, "--observer 2")
+            if not uw_game.connect_environment():
+                # automatically select map and start the game from here in the code
+                if False:
+                    uw_game.connect_new_server(0, "", "--allowUwApiAdmin 1")
+                else:
+                    uw_game.connect_new_server()
+        uw_game.log_info("bot-py done")
+
+    # Attack
 
     def attack_nearest_enemies(self):
         attack_unist = [
@@ -149,35 +197,7 @@ class Bot:
                 )
                 uw_commands.order(own.id, uw_commands.fight_to_entity(enemy.id))
 
-    def configure(self):
-        # auto start the game if available
-        if (
-            self.is_configured
-            and uw_game.game_state() == GameState.Session
-            and uw_world.is_admin()
-        ):
-            time.sleep(3)  # give the observer enough time to connect
-            uw_admin.start_game()
-            return
-        # is configuring possible?
-        if (
-            self.is_configured
-            or uw_game.game_state() != GameState.Session
-            or uw_world.my_player_id() == 0
-        ):
-            return
-        self.is_configured = True
-        uw_game.log_info("configuration start")
-        uw_game.set_player_name("Neviem")
-        uw_game.player_join_force(0)  # create new force
-        uw_game.set_force_color(1, 0.6, 1)
-        uw_game.set_force_race(4152033917)  # biomass
-        if uw_world.is_admin():
-            # uw_admin.set_map_selection("planets/tetrahedron.uwmap")
-            uw_admin.set_map_selection("special/risk.uwmap")
-            uw_admin.add_ai()
-            uw_admin.set_automatic_suggested_camera_focus(True)
-        uw_game.log_info("configuration done")
+    # Data extractors
 
     def get_own_enities(self):
         self.own_entities = [
@@ -213,10 +233,7 @@ class Bot:
                     ),
                 )
 
-    def get_incubators(self):
-        self.incubators = [
-            entity for entity in self.own_entities if entity.proto().name == "incubator"
-        ]
+    # Checks
 
     def entity_is_this_proto(self, entity: Entity, proto: int) -> bool:
         return entity.own() and entity.proto().name == uw_prototypes.get(proto).name
@@ -264,6 +281,16 @@ class Bot:
             for id in uw_world.overview_entities(build.pos)
         )
 
+    def can_be_built(self, i: int) -> bool:
+        build = self.buildings[i]
+        return (
+            not self.building_is_placed(i)
+            and (build.prev_pos <= 0 or self.buildings[build.prev_pos].pos >= 0)
+            and all(self.building_is_built(i - prev) for prev in build.build_after)
+        )
+
+    # Building things and stuff
+
     def set_building_recipe(self, i: int, recipe: int):
         build = self.buildings[i]
         if build.pos < 0:
@@ -278,17 +305,14 @@ class Bot:
                 if entity.Recipe is None or entity.Recipe.recipe != recipe:
                     uw_commands.set_recipe(id, recipe)
 
-    def can_be_built(self, i: int) -> bool:
-        build = self.buildings[i]
-        return (
-            not self.building_is_placed(i)
-            and (build.prev_pos <= 0 or self.buildings[build.prev_pos].pos >= 0)
-            and all(self.building_is_built(i - prev) for prev in build.build_after)
-        )
-
     def fulfill_requirements(self, requirements: set[Requirement]):
         for req in requirements:
             self.req_funcs[req]()
+
+    def incubator_recipe(self):
+        return prototypes.Recipe["wardkin"]
+
+    # Update
 
     def on_update(self, stepping: bool):
         self.configure()
@@ -302,7 +326,6 @@ class Bot:
             case 1:
                 self.get_own_enities()
                 self.get_main_building()
-                self.get_incubators()
 
                 for i in range(len(self.buildings)):
                     if self.can_be_built(i):
@@ -333,22 +356,6 @@ class Bot:
 
             # case 7:
             #     self.attack_nearest_enemies()
-
-    def run(self):
-        uw_game.log_info("bot-py start")
-
-        # Unnatural Worlds/bin/profiling.htm?port={port} # log: profiling server listens on port {}
-        # uw_game.performance_profiling(True)
-
-        if not uw_game.try_reconnect():
-            uw_game.set_connect_start_gui(True, "--observer 2")
-            if not uw_game.connect_environment():
-                # automatically select map and start the game from here in the code
-                if False:
-                    uw_game.connect_new_server(0, "", "--allowUwApiAdmin 1")
-                else:
-                    uw_game.connect_new_server()
-        uw_game.log_info("bot-py done")
 
 
 @dataclass
