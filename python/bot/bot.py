@@ -26,8 +26,8 @@ class Bot:
     main_entity: Entity | None = None
     start_pos: int = -1
     deposits: dict[str, list[Entity]] | None = {}
-    groups: list[list[int]] = []
-    entity_group: dict[int, list[int]] = {}
+    groups: list[list[Entity]] = []
+    grouped_entities: set[int] = set()
 
     def __init__(self):
         uw_events.on_update(self.on_update)
@@ -152,12 +152,6 @@ class Bot:
 
     # Attack
 
-    def group_size(self, unit: Entity, whitelist: set[int], radius: float = 75) -> int:
-        if len(whitelist) == 0:
-            return 0
-
-        return len(self.nearby_units(unit, whitelist, radius))
-
     def nearby_units(
         self, unit: Entity, whitelist: set[int], radius: float = 75
     ) -> list[Entity]:
@@ -173,11 +167,12 @@ class Bot:
 
         return result
 
-    def attack_nearest_enemies(self, unit: Entity, enemy_units: list[Entity]):
+    def find_nearest_enemy(
+        self, unit: Entity, enemy_units: list[Entity]
+    ) -> Entity | None:
         if len(enemy_units) == 0:
-            return
+            return None
 
-        _id = unit.id
         pos = unit.pos()
 
         moving_units: list[Entity] = []
@@ -209,68 +204,128 @@ class Bot:
             ),
             key=lambda x: x[1],
         )[0][0]
+        return enemy
 
-        uw_commands.order(_id, uw_commands.fight_to_entity(enemy.id))
+    def remove_dead(self):
+        for i in range(len(self.groups) - 1, -1, -1):
+            group = self.groups[i]
 
-    def regroup(self, unit: Entity, friendly_units: list[Entity], radius: float = 75):
-        target_id: int | None = None
-        if self.main_entity is not None:
-            self.main_entity.id
+            for j in range(len(group) - 1, -1, -1):
+                unit = group[j]
+                if unit.destroyed:
+                    group.pop(j)
+                    self.grouped_entities.remove(unit.id)
+                    uw_game.log_info(
+                        f"removed dead unit {unit.id} from group {i}: {[entity.id for entity in self.groups[i]]}"
+                    )
 
-        friendly_ids = {e.id for e in friendly_units}
-        if len(friendly_units) > 0:
-            ignore = {e.id for e in self.nearby_units(unit, friendly_ids, radius)}
-            targets = [
-                e[0]
-                for e in sorted(
-                    (
-                        (entity, uw_map.distance_estimate(unit.pos(), entity.pos()))
-                        for entity in friendly_units
-                    ),
-                    key=lambda x: x[1],
+            if len(group) == 0:
+                self.groups.pop(i)
+                uw_game.log_info(f"removed empty group {i}")
+
+    def merge_groups(self, group_size: int):
+        i = 0
+        while i < len(self.groups):
+            if i == len(self.groups) - 1:
+                # last group, nothing to merge with
+                i += 1
+            elif len(self.groups[i]) >= group_size:
+                # group is big enough
+                i += 1
+            else:
+                # merge with the next group
+                self.groups[i + 1].extend(self.groups[i])
+                self.groups.pop(i)
+                uw_game.log_info(
+                    f"merged group {i} with {i + 1}: {[entity.id for entity in self.groups[i]]}"
                 )
-                if e[0].id not in ignore
-            ]
 
-            if len(targets) > 0:
-                target_id = targets[0].id
-
-        if target_id is None:
+    def join_group(self, unit: Entity, group_size: int):
+        if unit.destroyed:
             return
 
-        uw_commands.order(unit.id, uw_commands.run_to_entity(target_id))
+        if len(self.groups) == 0:
+            self.groups.append([unit])
+            uw_game.log_info(
+                f"unit {unit.id} started new group 0: {[entity.id for entity in self.groups[0]]}"
+            )
+        elif len(self.groups[-1]) < group_size:
+            self.groups[-1].append(unit)
+            uw_game.log_info(
+                f"unit {unit.id} joined group {len(self.groups) - 1}: {[entity.id for entity in self.groups[-1]]}"
+            )
+        else:
+            self.groups.append([unit])
+            uw_game.log_info(
+                f"unit {unit.id} started new group {len(self.groups) - 1}: {[entity.id for entity in self.groups[-1]]}"
+            )
+
+        self.grouped_entities.add(unit.id)
 
     def group_attack(self):
+        group_size = 15
+
+        self.remove_dead()
+        self.merge_groups(group_size)
+
         attack_units = [
-            x
-            for x in self.own_entities
-            if x.proto().data.get("dps", 0) > 0 and x.id != self.main_entity.id
+            entity
+            for entity in self.own_entities
+            if entity.proto().data.get("dps", 0) > 0
+            and entity.id != self.main_entity.id
         ]
         if not attack_units:
             return
+
+        for unit in attack_units:
+            if unit.id not in self.grouped_entities:
+                self.join_group(unit, group_size)
 
         enemy_units = [
             x for x in uw_world.entities().values() if x.enemy() and x.Unit is not None
         ]
         if not enemy_units:
             return
+        enemy_unit_ids = {enemy.id for enemy in enemy_units}
 
-        enemy_whitelist_ids = {e.id for e in enemy_units}
-        attack_units_ids = {e.id for e in attack_units}
+        for group in self.groups:
+            if len(group) == 0:
+                # should not happen, but whatever
+                continue
 
-        for unit in attack_units:
-            group_size = 15
-
-            group_radius = 200
-            if len(self.nearby_units(unit, enemy_whitelist_ids, 600)) > 0:
-                group_radius = 75
-
-            if self.group_size(unit, attack_units_ids, group_radius) >= group_size:
-                self.attack_nearest_enemies(unit, enemy_units)
-            elif len(self.nearby_units(unit, enemy_whitelist_ids, 400)) > 0:
-                self.attack_nearest_enemies(unit, enemy_units)
+            leader = group[0]
+            enemy: Entity | None = None
+            if len(group) >= group_size:
+                enemy = self.find_nearest_enemy(leader, enemy_units)
             else:
-                self.regroup(unit, attack_units, group_radius)
+                nearby_enemies = self.nearby_units(leader, enemy_unit_ids, 400)
+                enemy = self.find_nearest_enemy(leader, nearby_enemies)
+
+            if enemy is not None:
+                for unit in group:
+                    if uw_map.distance_estimate(unit.pos(), leader.pos()) > 200:
+                        nearby_enemy: Entity | None = None
+                        nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 200)
+                        if len(nearby_enemies) > 0:
+                            nearby_enemy = self.find_nearest_enemy(unit, nearby_enemies)
+                        if nearby_enemy is not None:
+                            uw_commands.order(
+                                unit.id, uw_commands.fight_to_entity(nearby_enemy.id)
+                            )
+                        else:
+                            uw_commands.order(
+                                unit.id, uw_commands.run_to_entity(leader.id)
+                            )
+                    else:
+                        uw_commands.order(
+                            unit.id, uw_commands.fight_to_entity(enemy.id)
+                        )
+
+            else:
+                if len(group) > 1:
+                    uw_commands.order(leader.id, uw_commands.run_to_entity(group[1].id))
+                for i in range(1, len(group)):
+                    uw_commands.order(group[i].id, uw_commands.run_to_entity(leader.id))
 
     # Data extractors
 
