@@ -419,7 +419,7 @@ class Bot:
         build = self.buildings[i]
         return (
             not self.building_is_placed(i)
-            and (build.prev_pos <= 0 or self.buildings[build.prev_pos].pos >= 0)
+            and (build.prev_pos <= 0 or self.buildings[i - build.prev_pos].pos >= 0)
             and all(self.building_is_built(i - prev) for prev in build.build_after)
         )
 
@@ -460,6 +460,15 @@ class Bot:
             return prototypes.Recipe["maggot"]
 
         return prototypes.Recipe["venomite"]
+
+    def mutapod_aether_recipe(self):
+        return prototypes.Recipe["acid"]
+
+    def mutapod_aether2_recipe(self):
+        return prototypes.Recipe["precision"]
+
+    def mutapod_oil_recipe(self):
+        return prototypes.Recipe["regeneration"]
 
     # Update
 
