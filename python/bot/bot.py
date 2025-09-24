@@ -28,6 +28,7 @@ class Bot:
     deposits: dict[str, list[Entity]] | None = {}
     groups: list[list[Entity]] = []
     grouped_entities: set[int] = set()
+    enemy_targets: dict[int, (Entity, int)] = {}
 
     def __init__(self):
         uw_events.on_update(self.on_update)
@@ -167,13 +168,17 @@ class Bot:
 
         return result
 
-    def find_nearest_enemy(
+    def target_candidates(
         self, unit: Entity, enemy_units: list[Entity]
-    ) -> Entity | None:
+    ) -> list[Entity]:
         if len(enemy_units) == 0:
-            return None
+            return []
 
-        pos = unit.pos()
+        # first ATVs and maggots
+
+        # then buildings
+
+        # then anything
 
         moving_units: list[Entity] = []
 
@@ -191,12 +196,22 @@ class Bot:
                 unit.Position.position,
                 e.Position.position,
             )
-            < 200
+            < 100
         ]
 
-        if len(target_units) == 0:
-            target_units = enemy_units
+        if len(target_units) > 0:
+            return target_units
 
+        return enemy_units
+
+    def find_nearest_enemy(
+        self, unit: Entity, enemy_units: list[Entity]
+    ) -> Entity | None:
+        target_units = self.target_candidates(unit, enemy_units)
+        if len(target_units) == 0:
+            return None
+
+        pos = unit.pos()
         enemy = sorted(
             (
                 (entity, uw_map.distance_estimate(pos, entity.pos()))
@@ -215,6 +230,8 @@ class Bot:
                 if unit.destroyed:
                     group.pop(j)
                     self.grouped_entities.remove(unit.id)
+                    if unit.id in self.enemy_targets:
+                        del self.enemy_targets[unit.id]
                     uw_game.log_info(
                         f"removed dead unit {unit.id} from group {i}: {[entity.id for entity in self.groups[i]]}"
                     )
@@ -234,8 +251,8 @@ class Bot:
                 i += 1
             else:
                 # merge with the next group
-                self.groups[i + 1].extend(self.groups[i])
-                self.groups.pop(i)
+                self.groups[i].extend(self.groups[i + 1])
+                self.groups.pop(i + 1)
                 uw_game.log_info(
                     f"merged group {i} with {i + 1}: {[entity.id for entity in self.groups[i]]}"
                 )
@@ -261,6 +278,20 @@ class Bot:
             )
 
         self.grouped_entities.add(unit.id)
+
+    def switch_targets(self, unit: Entity, enemy: Entity, steps: int = 100) -> Entity:
+        if unit.id in self.enemy_targets:
+            target, step = self.enemy_targets[unit.id]
+            if not target.destroyed and self.work_step < step + steps:
+                return target
+
+        self.enemy_targets[unit.id] = (enemy, self.work_step)
+        return enemy
+
+    def fight_for_a_while(self, unit: Entity, enemy: Entity, steps: int = 100):
+        uw_commands.order(
+            unit.id, uw_commands.fight_to_entity(self.switch_targets(unit, enemy).id)
+        )
 
     def group_attack(self):
         group_size = 15
@@ -293,7 +324,7 @@ class Bot:
                 # should not happen, but whatever
                 continue
 
-            leader = group[0]
+            leader = group[len(group) // 2]
             enemy: Entity | None = None
             if len(group) >= group_size:
                 enemy = self.find_nearest_enemy(leader, enemy_units)
@@ -308,23 +339,26 @@ class Bot:
                         nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 200)
                         if len(nearby_enemies) > 0:
                             nearby_enemy = self.find_nearest_enemy(unit, nearby_enemies)
+
                         if nearby_enemy is not None:
-                            uw_commands.order(
-                                unit.id, uw_commands.fight_to_entity(nearby_enemy.id)
-                            )
+                            self.fight_for_a_while(unit, nearby_enemy)
                         else:
                             uw_commands.order(
                                 unit.id, uw_commands.run_to_entity(leader.id)
                             )
                     else:
-                        uw_commands.order(
-                            unit.id, uw_commands.fight_to_entity(enemy.id)
-                        )
+                        self.fight_for_a_while(unit, enemy)
 
             else:
-                if len(group) > 1:
-                    uw_commands.order(leader.id, uw_commands.run_to_entity(group[1].id))
-                for i in range(1, len(group)):
+                for i in range(len(group)):
+                    if group[i].id == leader.id:
+                        positions = uw_map.area_neighborhood(self.start_pos, 50)
+                        if len(positions) > 0:
+                            uw_commands.order(
+                                group[i].id, uw_commands.run_to_position(positions[0])
+                            )
+                        continue
+
                     uw_commands.order(group[i].id, uw_commands.run_to_entity(leader.id))
 
     # Data extractors
@@ -453,9 +487,9 @@ class Bot:
 
         self.work_step += 1
         match (
-            self.work_step % 20
+            self.work_step % 10
         ):  # save some cpu cycles by splitting work over multiple steps
-            case 0 | 5 | 10 | 15:
+            case 0 | 5:
                 self.get_own_enities()
                 self.get_main_building()
 
