@@ -175,10 +175,13 @@ class Bot:
 
     def find_nearest_enemy(
         self, unit: Entity, enemy_units: list[Entity]
-    ) -> Entity | None:
+    ) -> tuple[
+        Entity | None,
+        float,
+    ]:
         target_units = self.target_candidates(unit, enemy_units)
         if len(target_units) == 0:
-            return None
+            return (None, 0.0)
 
         pos = unit.pos()
         enemy = sorted(
@@ -187,7 +190,7 @@ class Bot:
                 for entity in target_units
             ),
             key=lambda x: x[1],
-        )[0][0]
+        )[0]
         return enemy
 
     def remove_dead(self):
@@ -295,32 +298,73 @@ class Bot:
 
             leader = group[len(group) // 2]
             enemy: Entity | None = None
+            enemy_distance: float = 0.0
             if self.group_size(group) >= group_size:
-                enemy = self.find_nearest_enemy(leader, enemy_units)
+                enemy, enemy_distance = self.find_nearest_enemy(leader, enemy_units)
             else:
                 nearby_enemies = self.nearby_units(leader, enemy_unit_ids, 400)
-                enemy = self.find_nearest_enemy(leader, nearby_enemies)
+                enemy, enemy_distance = self.find_nearest_enemy(leader, nearby_enemies)
+
+            group_radius = 200.0
 
             if enemy is not None:
+                # we have a target
+                furthest_from_leader: Entity | None = None
+                furthest_distance: float = 0
+
                 for unit in group:
-                    if self.safe_distance_estimate(unit.pos(), leader.pos()) > 200:
+                    distance_from_leader = self.safe_distance_estimate(
+                        unit.pos(), leader.pos()
+                    )
+                    if distance_from_leader > 200:
+                        # leader is too far
                         nearby_enemy: Entity | None = None
                         nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 200)
                         if len(nearby_enemies) > 0:
-                            nearby_enemy = self.find_nearest_enemy(unit, nearby_enemies)
+                            nearby_enemy, _ = self.find_nearest_enemy(
+                                unit, nearby_enemies
+                            )
 
                         if nearby_enemy is not None:
+                            # but there is an enemy nearby
                             self.fight_for_a_while(unit, nearby_enemy)
                         else:
+                            # otherwise go to leader
                             uw_commands.order(
                                 unit.id, uw_commands.run_to_entity(leader.id)
                             )
                     else:
-                        self.fight_for_a_while(unit, enemy)
+                        # we are close to leader
+
+                        if enemy_distance < 300:
+                            # there is an enemy nearby
+                            self.fight_for_a_while(unit, enemy)
+                        else:
+                            # otherwise go to leader
+                            uw_commands.order(
+                                unit.id, uw_commands.run_to_entity(leader.id)
+                            )
+
+                    # leader is wherever
+                    if (
+                        enemy_distance > 300  # no theat
+                        and distance_from_leader > group_radius  # further than we want
+                        and distance_from_leader > furthest_distance
+                    ):
+                        furthest_distance = distance_from_leader
+                        furthest_from_leader = unit
+
+                if furthest_from_leader is not None:
+                    # someone is far away and there is no threat, regroup
+                    uw_commands.order(
+                        leader.id, uw_commands.run_to_entity(furthest_from_leader.id)
+                    )
 
             else:
+                # no target
                 for i in range(len(group)):
                     if group[i].id == leader.id:
+                        # leader goes to the base
                         positions = self.safe_area_neighborhood(self.start_pos, 50)
                         if len(positions) > 0:
                             uw_commands.order(
@@ -328,6 +372,7 @@ class Bot:
                             )
                         continue
 
+                    # other units go to the leader
                     uw_commands.order(group[i].id, uw_commands.run_to_entity(leader.id))
 
     # Data extractors
