@@ -22,15 +22,15 @@ class Build:
 
 def create_order(bot) -> list[Build]:
     return [
-        *start_trees(bot),
-        *mega_cluster(bot, 0),
-        *mega_cluster(bot, 1, [1, 2, 3]),
-        *mega_cluster(bot, 2, [1, 2, 3]),
-        *mega_cluster(bot, 3, [1, 2, 3]),
+        *start_trees_3(bot),
+        *mega_cluster_3(bot, 0),
+        *mega_cluster_3(bot, 1, [1, 2, 3]),
+        *mega_cluster_3(bot, 2, [1, 2, 3]),
+        *mega_cluster_3(bot, 3, [1, 2, 3]),
     ]
 
 
-def start_trees(bot):
+def start_trees_3(bot):
     return [
         Build(
             prototypes.Construction["nutritree"],
@@ -47,16 +47,16 @@ def start_trees(bot):
     ]
 
 
-def mega_cluster(bot, idx: int, build_after: list[int] = []):
+def mega_cluster_3(bot, idx: int, build_after: list[int] = []):
     return [
-        *deeproot(bot, idx, build_after),
-        *cluster(bot, 1),
-        *deeproot_tree(bot),
-        *cluster(bot, 5),
+        *deeproot_1(bot, idx, build_after),
+        *cluster_3(bot, 1),
+        *deeproot_tree_1(bot),
+        *cluster_3(bot, 5),
     ]
 
 
-def deeproot(bot, idx: int, build_after: list[int] = []):
+def deeproot_1(bot, idx: int, build_after: list[int] = []):
     return [
         Build(
             prototypes.Construction["deeproot"],
@@ -67,7 +67,7 @@ def deeproot(bot, idx: int, build_after: list[int] = []):
     ]
 
 
-def deeproot_tree(bot):
+def deeproot_tree_1(bot):
     return [
         Build(
             prototypes.Construction["nutritree"],
@@ -77,7 +77,7 @@ def deeproot_tree(bot):
     ]
 
 
-def cluster(bot, prev_pos: int):
+def cluster_3(bot, prev_pos: int):
     return [
         Build(
             prototypes.Construction["incubator"],
