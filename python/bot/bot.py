@@ -1,15 +1,7 @@
-import random
 import time
 from uwapi import *
-import random
 from . import prototypes
-from dataclasses import dataclass, field
-from typing import Callable
-from enum import Enum
-
-
-class Requirement(Enum):
-    DEPOSITS = 0
+from .build import Requirement, create_order
 
 
 def addToList(obj: dict[str, list[Entity]], key, value):
@@ -33,67 +25,7 @@ class Bot:
     def __init__(self):
         uw_events.on_update(self.on_update)
 
-        self.buildings: list[Build] = [
-            # treeeeees
-            Build(
-                prototypes.Construction["nutritree"],
-                pos_f=lambda: self.main_entity.pos(),
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                pos_f=lambda: self.main_entity.pos(),
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                pos_f=lambda: self.main_entity.pos(),
-            ),
-            # deeproot
-            Build(
-                prototypes.Construction["deeproot"],
-                requirements={Requirement.DEPOSITS},
-                pos_f=lambda: self.deposits["metal deposit"][0].pos(),
-            ),
-            # cluster 1
-            Build(
-                prototypes.Construction["incubator"],
-                prev_pos=1,
-                build_after=[1],
-                recipe=lambda: self.incubator_recipe(),
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                prev_pos=1,
-                build_after=[2],
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                prev_pos=2,
-                build_after=[3],
-            ),
-            # deeproot tree
-            Build(
-                prototypes.Construction["nutritree"],
-                prev_pos=4,
-                build_after=[1, 2, 3],
-            ),
-            # cluster 2
-            Build(
-                prototypes.Construction["incubator"],
-                prev_pos=5,
-                build_after=[1],
-                recipe=lambda: self.incubator_recipe(),
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                prev_pos=1,
-                build_after=[2],
-            ),
-            Build(
-                prototypes.Construction["nutritree"],
-                prev_pos=2,
-                build_after=[3],
-            ),
-        ]
+        self.buildings = create_order(self)
 
         self.recipes = [
             (i, self.buildings[i].recipe)
@@ -527,15 +459,3 @@ class Bot:
                     uw_commands.order(
                         self.main_entity.id, uw_commands.run_to_position(self.start_pos)
                     )
-
-
-@dataclass
-class Build:
-    proto: int = 0
-    requirements: set[Requirement] = field(default_factory=set)
-    prev_pos: int = -1
-    pos_f: Callable[[], int] | None = None
-    build_after: list[int] = field(default_factory=list)
-    recipe: Callable[[], int] | None = None
-
-    pos: int = -1
