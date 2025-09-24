@@ -5,6 +5,11 @@ import random
 from . import prototypes
 from dataclasses import dataclass, field
 from typing import Callable
+from enum import Enum
+
+
+class Requirement(Enum):
+    DEPOSITS = 0
 
 
 def addToList(obj: dict[str, list[Entity]], key, value):
@@ -20,13 +25,20 @@ class Bot:
     own_entities: list[Entity] | None = None
     main_entity: Entity | None = None
     deposits: dict[str, list[Entity]] | None = {}
-    incubators: list[Entity] | None = None
 
     def __init__(self):
         uw_events.on_update(self.on_update)
 
         self.buildings: list[Build] = [
-            # tree
+            # treeeeees
+            Build(
+                prototypes.Construction["nutritree"],
+                pos_f=lambda: self.main_entity.pos(),
+            ),
+            Build(
+                prototypes.Construction["nutritree"],
+                pos_f=lambda: self.main_entity.pos(),
+            ),
             Build(
                 prototypes.Construction["nutritree"],
                 pos_f=lambda: self.main_entity.pos(),
@@ -34,14 +46,15 @@ class Bot:
             # deeproot
             Build(
                 prototypes.Construction["deeproot"],
+                requirements={Requirement.DEPOSITS},
                 pos_f=lambda: self.deposits["metal deposit"][0].pos(),
-                build_after=[1],
             ),
             # cluster 1
             Build(
                 prototypes.Construction["incubator"],
                 prev_pos=1,
                 build_after=[1],
+                recipe=lambda: prototypes.Recipe["wardkin"],
             ),
             Build(
                 prototypes.Construction["nutritree"],
@@ -64,6 +77,7 @@ class Bot:
                 prototypes.Construction["incubator"],
                 prev_pos=5,
                 build_after=[1],
+                recipe=lambda: prototypes.Recipe["wardkin"],
             ),
             Build(
                 prototypes.Construction["nutritree"],
@@ -77,21 +91,57 @@ class Bot:
             ),
         ]
 
+        self.recipes = [
+            (i, self.buildings[i].recipe)
+            for i in range(len(self.buildings))
+            if self.buildings[i].recipe is not None
+        ]
+
+        self.req_funcs = {
+            Requirement.DEPOSITS: self.get_deposits,
+        }
+
     def attack_nearest_enemies(self):
-        own_units = [
+        attack_unist = [
             x
             for x in self.own_entities
-            if x.proto().data.get("dps", 0) > 0 and x != self.main_entity
+            if x.proto().data.get("dps", 0) > 0 and x.id != self.main_entity.id
         ]
-        if not own_units:
+        if not attack_unist:
             return
+
+        # for unit in attack_unist:
+        #     group_size = self._created_units.get(unit.Id, None)
+
+        #     if group_size is None:
+        #         if dict_len <3:
+        #             group_size = 2
+        #         elif dict_len < 25:
+        #             group_size = 10
+        #         else:
+        #             group_size = 15
+
+        #         if group_size < 15:
+        #             self._created_units[unit.Id] = group_size
+
+        #     group_radius = 200
+        #     if len(self.nearby_units(unit, enemy_whitelist_ids, 500)) > 0:
+        #         group_radius = 75
+
+        #     if self.group_size(unit, attack_unist_ids, group_radius) >= group_size:
+        #         self.attack_nearest_enemies(unit, enemy_units)
+        #     elif len(self.nearby_units(unit, enemy_whitelist_ids, 300)) > 0:
+        #         self.attack_nearest_enemies(unit, enemy_units)
+        #     else:
+        #         self.regroup(unit, attack_unist, group_radius)
 
         enemy_units = [
             x for x in uw_world.entities().values() if x.enemy() and x.Unit is not None
         ]
         if not enemy_units:
             return
-        for own in own_units:
+
+        for own in attack_unist:
             if len(uw_commands.orders(own.id)) == 0:
                 enemy = min(
                     enemy_units,
@@ -187,7 +237,7 @@ class Bot:
             for id in uw_world.overview_entities(build.pos)
         )
 
-    def is_being_built(self, i: int) -> bool:
+    def building_is_being_built(self, i: int) -> bool:
         build = self.buildings[i]
         if build.pos < 0:
             return False
@@ -201,14 +251,44 @@ class Bot:
             for id in uw_world.overview_entities(build.pos)
         )
 
+    def building_is_placed(self, i: int) -> bool:
+        build = self.buildings[i]
+        if build.pos < 0:
+            return False
+
+        return any(
+            self.entity_is_this_proto(
+                uw_world.entity(id),
+                build.proto,
+            )
+            for id in uw_world.overview_entities(build.pos)
+        )
+
+    def set_building_recipe(self, i: int, recipe: int):
+        build = self.buildings[i]
+        if build.pos < 0:
+            return
+
+        for id in uw_world.overview_entities(build.pos):
+            entity = uw_world.entity(id)
+            if self.entity_is_this_proto(
+                entity,
+                build.proto,
+            ):
+                if entity.Recipe is None or entity.Recipe.recipe != recipe:
+                    uw_commands.set_recipe(id, recipe)
+
     def can_be_built(self, i: int) -> bool:
         build = self.buildings[i]
         return (
-            all(self.building_is_built(i - prev) for prev in build.build_after)
+            not self.building_is_placed(i)
             and (build.prev_pos <= 0 or self.buildings[build.prev_pos].pos >= 0)
-            and not self.is_being_built(i)
-            and not self.building_is_built(i)
+            and all(self.building_is_built(i - prev) for prev in build.build_after)
         )
+
+    def fulfill_requirements(self, requirements: set[Requirement]):
+        for req in requirements:
+            self.req_funcs[req]()
 
     def on_update(self, stepping: bool):
         self.configure()
@@ -222,12 +302,14 @@ class Bot:
             case 1:
                 self.get_own_enities()
                 self.get_main_building()
-                self.get_deposits()
                 self.get_incubators()
 
                 for i in range(len(self.buildings)):
                     if self.can_be_built(i):
                         build = self.buildings[i]
+
+                        self.fulfill_requirements(build.requirements)
+
                         pos = (
                             self.buildings[i - build.prev_pos].pos
                             if build.prev_pos > 0
@@ -243,16 +325,21 @@ class Bot:
                         build.pos = placement
                         break
 
-                for incubator in self.incubators:
-                    if incubator.Recipe is None:
-                        uw_commands.set_recipe(
-                            incubator.id, prototypes.Recipe["wardkin"]
-                        )
+                for i, recipe in self.recipes:
+                    self.set_building_recipe(i, recipe())
 
-                self.attack_nearest_enemies()
+            # case 2:
+            #     self.attack_nearest_enemies()
+
+            # case 7:
+            #     self.attack_nearest_enemies()
 
     def run(self):
         uw_game.log_info("bot-py start")
+
+        # Unnatural Worlds/bin/profiling.htm?port={port} # log: profiling server listens on port {}
+        # uw_game.performance_profiling(True)
+
         if not uw_game.try_reconnect():
             uw_game.set_connect_start_gui(True, "--observer 2")
             if not uw_game.connect_environment():
@@ -267,7 +354,10 @@ class Bot:
 @dataclass
 class Build:
     proto: int = 0
+    requirements: set[Requirement] = field(default_factory=set)
     prev_pos: int = -1
     pos_f: Callable[[], int] | None = None
-    pos: int = -1
     build_after: list[int] = field(default_factory=list)
+    recipe: Callable[[], int] | None = None
+
+    pos: int = -1
