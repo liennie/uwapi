@@ -18,7 +18,7 @@ class World:
     _my_force_statistics = _make_empty_UwMyForceStatistics()
     _entities: dict[int, Entity] = {}
     _policies: dict[int, UwForeignPolicyEnum] = {}
-    _overview: list[UwOverviewFlags] = []
+    # _overview: list[UwOverviewFlags] = []
 
     def __new__(cls):
         if cls._instance is None:
@@ -64,11 +64,11 @@ class World:
             construction_proto, position, recipe_proto
         )
 
-    def overview_flags_all(self) -> list[UwOverviewFlags]:
-        return self._overview
+    # def overview_flags_all(self) -> list[UwOverviewFlags]:
+    #     return self._overview
 
-    def overview_flags(self, position: int) -> UwOverviewFlags:
-        return self._overview[position]
+    # def overview_flags(self, position: int) -> UwOverviewFlags:
+    #     return self._overview[position]
 
     def overview_entities(self, position: int) -> list[int]:
         return uw_interop.uwOverviewIds(position).ids
@@ -158,7 +158,7 @@ class World:
         self._update_fresh()
         self._update_modified()
         self._update_policies()
-        self._update_overview(stepping)
+        # self._update_overview(stepping)
 
 
 uw_world = World()

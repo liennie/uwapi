@@ -24,7 +24,10 @@ class Bot:
     work_step: int = 0  # save some cpu cycles by splitting work over multiple steps
     own_entities: list[Entity] | None = None
     main_entity: Entity | None = None
+    start_pos: int = -1
     deposits: dict[str, list[Entity]] | None = {}
+    groups: list[list[int]] = []
+    entity_group: dict[int, list[int]] = {}
 
     def __init__(self):
         uw_events.on_update(self.on_update)
@@ -149,39 +152,102 @@ class Bot:
 
     # Attack
 
-    def attack_nearest_enemies(self):
-        attack_unist = [
+    def group_size(self, unit: Entity, whitelist: set[int], radius: float = 75) -> int:
+        if len(whitelist) == 0:
+            return 0
+
+        return len(self.nearby_units(unit, whitelist, radius))
+
+    def nearby_units(
+        self, unit: Entity, whitelist: set[int], radius: float = 75
+    ) -> list[Entity]:
+        if len(whitelist) == 0:
+            return []
+
+        area = uw_map.area_extended(unit.pos(), radius)
+        result = []
+        for position in area:
+            for id in uw_world.overview_entities(position):
+                if id in whitelist:
+                    result.append(uw_world.entity(id))
+
+        return result
+
+    def attack_nearest_enemies(self, unit: Entity, enemy_units: list[Entity]):
+        if len(enemy_units) == 0:
+            return
+
+        _id = unit.id
+        pos = unit.pos()
+
+        moving_units: list[Entity] = []
+
+        for enemy in enemy_units:
+            if (
+                enemy.Proto is not None
+                and len(enemy.proto().data.get("speeds", {})) > 0
+            ):
+                moving_units.append(enemy)
+
+        target_units = [
+            e
+            for e in moving_units
+            if uw_map.distance_estimate(
+                unit.Position.position,
+                e.Position.position,
+            )
+            < 200
+        ]
+
+        if len(target_units) == 0:
+            target_units = enemy_units
+
+        enemy = sorted(
+            (
+                (entity, uw_map.distance_estimate(pos, entity.pos()))
+                for entity in target_units
+            ),
+            key=lambda x: x[1],
+        )[0][0]
+
+        uw_commands.order(_id, uw_commands.fight_to_entity(enemy.id))
+
+    def regroup(self, unit: Entity, friendly_units: list[Entity], radius: float = 75):
+        target_id: int | None = None
+        if self.main_entity is not None:
+            self.main_entity.id
+
+        friendly_ids = {e.id for e in friendly_units}
+        if len(friendly_units) > 0:
+            ignore = {e.id for e in self.nearby_units(unit, friendly_ids, radius)}
+            targets = [
+                e[0]
+                for e in sorted(
+                    (
+                        (entity, uw_map.distance_estimate(unit.pos(), entity.pos()))
+                        for entity in friendly_units
+                    ),
+                    key=lambda x: x[1],
+                )
+                if e[0].id not in ignore
+            ]
+
+            if len(targets) > 0:
+                target_id = targets[0].id
+
+        if target_id is None:
+            return
+
+        uw_commands.order(unit.id, uw_commands.run_to_entity(target_id))
+
+    def group_attack(self):
+        attack_units = [
             x
             for x in self.own_entities
             if x.proto().data.get("dps", 0) > 0 and x.id != self.main_entity.id
         ]
-        if not attack_unist:
+        if not attack_units:
             return
-
-        # for unit in attack_unist:
-        #     group_size = self._created_units.get(unit.Id, None)
-
-        #     if group_size is None:
-        #         if dict_len <3:
-        #             group_size = 2
-        #         elif dict_len < 25:
-        #             group_size = 10
-        #         else:
-        #             group_size = 15
-
-        #         if group_size < 15:
-        #             self._created_units[unit.Id] = group_size
-
-        #     group_radius = 200
-        #     if len(self.nearby_units(unit, enemy_whitelist_ids, 500)) > 0:
-        #         group_radius = 75
-
-        #     if self.group_size(unit, attack_unist_ids, group_radius) >= group_size:
-        #         self.attack_nearest_enemies(unit, enemy_units)
-        #     elif len(self.nearby_units(unit, enemy_whitelist_ids, 300)) > 0:
-        #         self.attack_nearest_enemies(unit, enemy_units)
-        #     else:
-        #         self.regroup(unit, attack_unist, group_radius)
 
         enemy_units = [
             x for x in uw_world.entities().values() if x.enemy() and x.Unit is not None
@@ -189,13 +255,22 @@ class Bot:
         if not enemy_units:
             return
 
-        for own in attack_unist:
-            if len(uw_commands.orders(own.id)) == 0:
-                enemy = min(
-                    enemy_units,
-                    key=lambda x: uw_map.distance_estimate(own.pos(), x.pos()),
-                )
-                uw_commands.order(own.id, uw_commands.fight_to_entity(enemy.id))
+        enemy_whitelist_ids = {e.id for e in enemy_units}
+        attack_units_ids = {e.id for e in attack_units}
+
+        for unit in attack_units:
+            group_size = 15
+
+            group_radius = 200
+            if len(self.nearby_units(unit, enemy_whitelist_ids, 600)) > 0:
+                group_radius = 75
+
+            if self.group_size(unit, attack_units_ids, group_radius) >= group_size:
+                self.attack_nearest_enemies(unit, enemy_units)
+            elif len(self.nearby_units(unit, enemy_whitelist_ids, 400)) > 0:
+                self.attack_nearest_enemies(unit, enemy_units)
+            else:
+                self.regroup(unit, attack_units, group_radius)
 
     # Data extractors
 
@@ -211,6 +286,8 @@ class Bot:
                 and entity.proto().name == "overlord"
             ):
                 self.main_entity = entity
+                if self.start_pos < 0:
+                    self.start_pos = entity.pos()
                 return
 
         self.main_entity = None
@@ -321,9 +398,9 @@ class Bot:
 
         self.work_step += 1
         match (
-            self.work_step % 10
+            self.work_step % 20
         ):  # save some cpu cycles by splitting work over multiple steps
-            case 1:
+            case 0 | 5 | 10 | 15:
                 self.get_own_enities()
                 self.get_main_building()
 
@@ -351,11 +428,16 @@ class Bot:
                 for i, recipe in self.recipes:
                     self.set_building_recipe(i, recipe())
 
-            # case 2:
-            #     self.attack_nearest_enemies()
+            case 3:
+                self.get_own_enities()
+                self.get_main_building()
 
-            # case 7:
-            #     self.attack_nearest_enemies()
+                self.group_attack()
+
+                if self.main_entity is not None:
+                    uw_commands.order(
+                        self.main_entity.id, uw_commands.run_to_position(self.start_pos)
+                    )
 
 
 @dataclass
