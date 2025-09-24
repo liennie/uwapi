@@ -15,6 +15,7 @@ class Bot:
     is_configured: bool = False
     work_step: int = 0  # save some cpu cycles by splitting work over multiple steps
     own_entities: list[Entity] | None = None
+    own_priority_entites: list[Entity] | None = None
     main_entity: Entity | None = None
     start_pos: int = INVALID
     deposits: dict[str, list[Entity]] | None = {}
@@ -333,9 +334,16 @@ class Bot:
 
     def get_own_enities(self):
         self.own_entities = [
-            x
-            for x in uw_world.entities().values()
-            if x.own() and x.Unit is not None and x.Proto is not None
+            entity
+            for entity in uw_world.entities().values()
+            if entity.own() and entity.Unit is not None and entity.Proto is not None
+        ]
+
+    def get_own_priority_entities(self):
+        self.own_priority_entites = [
+            entity
+            for entity in uw_world.entities().values()
+            if entity.own() and entity.Priority is not None and entity.Proto is not None
         ]
 
     def get_main_building(self):
@@ -517,3 +525,10 @@ class Bot:
 
                 if self.main_entity is not None:
                     self.safe_run_to_position(self.main_entity.id, self.start_pos)
+
+        if self.work_step % 200 == 0:
+            self.get_own_priority_entities()
+
+            for entity in self.own_priority_entites:
+                if entity.Priority.priority == Priority.Disabled:
+                    uw_commands.set_priority(entity.id, Priority.Normal)
