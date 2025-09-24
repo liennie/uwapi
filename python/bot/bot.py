@@ -107,6 +107,20 @@ class Bot:
 
     # Attack
 
+    unit_weight: dict[int, float] = {
+        prototypes.Unit["wardkin"]: 1.0,
+        prototypes.Unit["jumpscare"]: 0.1,
+        prototypes.Unit["venomite"]: 0.2,
+        prototypes.Unit["sunbeam"]: 1,
+    }
+
+    def group_size(self, group: list[Entity]) -> float:
+        return sum(
+            self.unit_weight.get(entity.proto().id, 1.0)
+            for entity in group
+            if entity.Proto is not None
+        )
+
     def nearby_units(
         self, unit: Entity, whitelist: set[int], radius: float = 75
     ) -> list[Entity]:
@@ -200,7 +214,7 @@ class Bot:
             if i == len(self.groups) - 1:
                 # last group, nothing to merge with
                 i += 1
-            elif len(self.groups[i]) >= group_size:
+            elif self.group_size(self.groups[i]) >= group_size:
                 # group is big enough
                 i += 1
             else:
@@ -220,7 +234,7 @@ class Bot:
             uw_game.log_info(
                 f"unit {unit.id} started new group 0: {[entity.id for entity in self.groups[0]]}"
             )
-        elif len(self.groups[-1]) < group_size:
+        elif self.group_size(self.groups[-1]) < group_size:
             self.groups[-1].append(unit)
             uw_game.log_info(
                 f"unit {unit.id} joined group {len(self.groups) - 1}: {[entity.id for entity in self.groups[-1]]}"
@@ -280,7 +294,7 @@ class Bot:
 
             leader = group[len(group) // 2]
             enemy: Entity | None = None
-            if len(group) >= group_size:
+            if self.group_size(group) >= group_size:
                 enemy = self.find_nearest_enemy(leader, enemy_units)
             else:
                 nearby_enemies = self.nearby_units(leader, enemy_unit_ids, 400)
@@ -319,7 +333,9 @@ class Bot:
 
     def get_own_enities(self):
         self.own_entities = [
-            x for x in uw_world.entities().values() if x.own() and x.Unit is not None
+            x
+            for x in uw_world.entities().values()
+            if x.own() and x.Unit is not None and x.Proto is not None
         ]
 
     def get_main_building(self):
@@ -429,6 +445,21 @@ class Bot:
 
     def incubator_recipe(self):
         return prototypes.Recipe["wardkin"]
+
+    def incubator2_recipe(self):
+        return prototypes.Recipe["sunbeam"]
+
+    def phytomorph_recipe(self):
+        maggot_count = sum(
+            1
+            for entity in self.own_entities
+            if entity.proto().id == prototypes.Unit["maggot"]
+        )
+
+        if maggot_count < 15:
+            return prototypes.Recipe["maggot"]
+
+        return prototypes.Recipe["venomite"]
 
     # Update
 
