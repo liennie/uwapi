@@ -2,6 +2,8 @@ import time
 from uwapi import *
 from . import prototypes
 from .build import Requirement, create_order
+import random
+import math
 
 
 def addToList(obj: dict[str, list[Entity]], key, value):
@@ -16,6 +18,7 @@ class Bot:
     work_step: int = 0  # save some cpu cycles by splitting work over multiple steps
     own_entities: list[Entity] | None = None
     own_priority_entites: list[Entity] | None = None
+    own_traps: list[Entity] | None = None
     main_entity: Entity | None = None
     start_pos: int = INVALID
     deposits: dict[str, list[Entity]] | None = {}
@@ -275,6 +278,7 @@ class Bot:
             entity
             for entity in self.own_entities
             if entity.proto().data.get("dps", 0) > 0
+            and len(entity.proto().data.get("speeds", {})) > 0
             and entity.id != self.main_entity.id
         ]
         if not attack_units:
@@ -382,6 +386,15 @@ class Bot:
             entity
             for entity in uw_world.entities().values()
             if entity.own() and entity.Priority is not None and entity.Proto is not None
+        ]
+
+    def get_own_traps(self):
+        self.own_traps = [
+            entity
+            for entity in uw_world.entities().values()
+            if entity.own()
+            and entity.Proto is not None
+            and "trap" in entity.proto().name
         ]
 
     def get_main_building(self):
@@ -502,7 +515,7 @@ class Bot:
             if entity.proto().id == prototypes.Unit["maggot"]
         )
 
-        if maggot_count < 15:
+        if maggot_count < 25:
             return prototypes.Recipe["maggot"]
 
         return prototypes.Recipe["venomite"]
@@ -515,6 +528,39 @@ class Bot:
 
     def mutapod_oil_recipe(self):
         return prototypes.Recipe["regeneration"]
+
+    def build_traps(self):
+        maggot_count = sum(
+            1
+            for entity in self.own_entities
+            if entity.proto().id == prototypes.Unit["maggot"]
+        )
+
+        progressing = sum(1 for entity in self.own_traps if entity.Life is None)
+
+        can_build = max(0, math.floor(((maggot_count - 6) / 4) - progressing))
+
+        if can_build == 0:
+            return
+
+        positions = self.safe_area_neighborhood(self.start_pos, 300)
+        if len(positions) == 0:
+            return
+
+        for i in range(can_build):
+            pos = random.choice(positions)
+
+            proto = (
+                prototypes.Construction["gas trap"]
+                if (len(self.own_traps) + i) % 2 == 0
+                else prototypes.Construction["dart trap"]
+            )
+
+            placement = uw_world.find_construction_placement(proto, pos)
+            uw_game.log_info(
+                f"trying to build {uw_prototypes.get(proto).name} next to {pos} at {placement}"
+            )
+            uw_commands.place_construction(proto, placement)
 
     # Update
 
@@ -570,3 +616,10 @@ class Bot:
             for entity in self.own_priority_entites:
                 if entity.Priority.priority == Priority.Disabled:
                     uw_commands.set_priority(entity.id, Priority.Normal)
+
+        if self.work_step % 200 == 100:
+            self.get_own_enities()
+            self.get_main_building()
+            self.get_own_traps()
+
+            self.build_traps()
