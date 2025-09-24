@@ -60,7 +60,7 @@ class Bot:
             return
         self.is_configured = True
         uw_game.log_info("configuration start")
-        uw_game.set_player_name("Neviem")
+        uw_game.set_player_name("Neviem Kto Je Kto Niekto")
         uw_game.player_join_force(0)  # create new force
         uw_game.set_force_color(1, 0.6, 1)
         uw_game.set_force_race(4152033917)  # biomass
@@ -323,7 +323,7 @@ class Bot:
                     if distance_from_leader > 200:
                         # leader is too far
                         nearby_enemy: Entity | None = None
-                        nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 200)
+                        nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 300)
                         if len(nearby_enemies) > 0:
                             nearby_enemy, _ = self.find_nearest_enemy(
                                 unit, nearby_enemies
