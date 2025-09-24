@@ -335,15 +335,8 @@ class Bot:
                             )
                     else:
                         # we are close to leader
-
-                        if enemy_distance < 300:
-                            # there is an enemy nearby
-                            self.fight_for_a_while(unit, enemy)
-                        else:
-                            # otherwise go to leader
-                            uw_commands.order(
-                                unit.id, uw_commands.run_to_entity(leader.id)
-                            )
+                        # there is an enemy nearby
+                        self.fight_for_a_while(unit, enemy)
 
                     # leader is wherever
                     if (
