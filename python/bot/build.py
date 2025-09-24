@@ -36,7 +36,7 @@ def create_order(bot) -> list[Build]:
         *small_cluster_3(bot, 53, [4, 5, 6, 7]),
         *small_cluster_3(bot, 20, [7, 8, 9, 10]),
         *small_cluster_3(bot, 14, [10, 11, 12, 13]),
-        *(small_cluster_3(bot, 7, [7, 8, 9]) * 100),
+        *(small_cluster_3(bot, 7, [7, 8, 9]) * 20),
     ]
 
 
