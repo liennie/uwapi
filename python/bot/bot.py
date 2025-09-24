@@ -83,6 +83,28 @@ class Bot:
                     uw_game.connect_new_server()
         uw_game.log_info("bot-py done")
 
+    # Safe
+
+    def safe_distance_estimate(self, posA: int, posB: int) -> float:
+        if posA == INVALID or posB == INVALID:
+            return 1000000.0
+        return uw_map.distance_estimate(posA, posB)
+
+    def safe_area_extended(self, pos: int, radius: float) -> list[int]:
+        if pos == INVALID:
+            return []
+        return uw_map.area_extended(pos, radius)
+
+    def safe_area_neighborhood(self, pos: int, radius: float) -> list[int]:
+        if pos == INVALID:
+            return []
+        return uw_map.area_neighborhood(pos, radius)
+
+    def safe_run_to_position(self, unit: int, pos: int):
+        if pos == INVALID:
+            return
+        uw_commands.order(unit, uw_commands.run_to_position(pos))
+
     # Attack
 
     def nearby_units(
@@ -91,7 +113,7 @@ class Bot:
         if len(whitelist) == 0:
             return []
 
-        area = uw_map.area_extended(unit.pos(), radius)
+        area = self.safe_area_extended(unit.pos(), radius)
         result = []
         for position in area:
             for id in uw_world.overview_entities(position):
@@ -124,9 +146,9 @@ class Bot:
         target_units = [
             e
             for e in moving_units
-            if uw_map.distance_estimate(
-                unit.Position.position,
-                e.Position.position,
+            if self.safe_distance_estimate(
+                unit.pos(),
+                e.pos(),
             )
             < 100
         ]
@@ -146,7 +168,7 @@ class Bot:
         pos = unit.pos()
         enemy = sorted(
             (
-                (entity, uw_map.distance_estimate(pos, entity.pos()))
+                (entity, self.safe_distance_estimate(pos, entity.pos()))
                 for entity in target_units
             ),
             key=lambda x: x[1],
@@ -266,7 +288,7 @@ class Bot:
 
             if enemy is not None:
                 for unit in group:
-                    if uw_map.distance_estimate(unit.pos(), leader.pos()) > 200:
+                    if self.safe_distance_estimate(unit.pos(), leader.pos()) > 200:
                         nearby_enemy: Entity | None = None
                         nearby_enemies = self.nearby_units(unit, enemy_unit_ids, 200)
                         if len(nearby_enemies) > 0:
@@ -284,7 +306,7 @@ class Bot:
             else:
                 for i in range(len(group)):
                     if group[i].id == leader.id:
-                        positions = uw_map.area_neighborhood(self.start_pos, 50)
+                        positions = self.safe_area_neighborhood(self.start_pos, 50)
                         if len(positions) > 0:
                             uw_commands.order(
                                 group[i].id, uw_commands.run_to_position(positions[0])
@@ -309,6 +331,8 @@ class Bot:
                 self.main_entity = entity
                 if self.start_pos < 0:
                     self.start_pos = entity.pos()
+                    if self.start_pos == INVALID:
+                        self.start_pos = -1
                 return
 
         self.main_entity = None
@@ -326,9 +350,7 @@ class Bot:
             for deposit_type in self.deposits.keys():
                 self.deposits[deposit_type] = sorted(
                     self.deposits[deposit_type],
-                    key=lambda x: uw_map.distance_estimate(
-                        self.main_entity.pos(), x.pos()
-                    ),
+                    key=lambda x: self.safe_distance_estimate(self.start_pos, x.pos()),
                 )
 
     # Checks
@@ -456,6 +478,4 @@ class Bot:
                 self.group_attack()
 
                 if self.main_entity is not None:
-                    uw_commands.order(
-                        self.main_entity.id, uw_commands.run_to_position(self.start_pos)
-                    )
+                    self.safe_run_to_position(self.main_entity.id, self.start_pos)
