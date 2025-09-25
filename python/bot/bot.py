@@ -208,7 +208,7 @@ class Bot:
                     if unit.id in self.enemy_targets:
                         del self.enemy_targets[unit.id]
                     uw_game.log_info(
-                        f"removed dead unit {unit.id} from group {i}: {[entity.id for entity in self.groups[i]]}"
+                        f"removed dead unit {unit.id} from group {i}: {len(self.groups[i])}"
                     )
 
             if len(group) == 0:
@@ -229,7 +229,7 @@ class Bot:
                 self.groups[i].extend(self.groups[i + 1])
                 self.groups.pop(i + 1)
                 uw_game.log_info(
-                    f"merged group {i} with {i + 1}: {[entity.id for entity in self.groups[i]]}"
+                    f"merged group {i} with {i + 1}: {len(self.groups[i])}"
                 )
 
     def join_group(self, unit: Entity, group_size: int):
@@ -239,17 +239,17 @@ class Bot:
         if len(self.groups) == 0:
             self.groups.append([unit])
             uw_game.log_info(
-                f"unit {unit.id} started new group 0: {[entity.id for entity in self.groups[0]]}"
+                f"unit {unit.id} started new group 0: {len(self.groups[0])}"
             )
         elif self.group_size(self.groups[-1]) < group_size:
             self.groups[-1].append(unit)
             uw_game.log_info(
-                f"unit {unit.id} joined group {len(self.groups) - 1}: {[entity.id for entity in self.groups[-1]]}"
+                f"unit {unit.id} joined group {len(self.groups) - 1}: {len(self.groups[-1])}"
             )
         else:
             self.groups.append([unit])
             uw_game.log_info(
-                f"unit {unit.id} started new group {len(self.groups) - 1}: {[entity.id for entity in self.groups[-1]]}"
+                f"unit {unit.id} started new group {len(self.groups) - 1}: {len(self.groups[-1])}"
             )
 
         self.grouped_entities.add(unit.id)
@@ -269,7 +269,7 @@ class Bot:
         )
 
     def group_attack(self):
-        group_size = 15
+        group_size = 20
 
         self.remove_dead()
         self.merge_groups(group_size)
